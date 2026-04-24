@@ -769,6 +769,16 @@ def switch_model(
     base_url = current_base_url
     api_mode = ""
 
+    # Detect custom/local endpoints where ``resolve_runtime_provider("custom")``
+    # cannot round-trip back to the original named custom provider (e.g.
+    # "ollama-launch").  The bare "custom" label is ambiguous — re-resolution
+    # falls through to OpenRouter, silently changing the endpoint.  Preserve
+    # the caller's existing credentials instead.
+    _is_custom_endpoint = target_provider in ("custom", "local") or (
+        "localhost" in (current_base_url or "")
+        or "127.0.0.1" in (current_base_url or "")
+    )
+
     if provider_changed or explicit_provider:
         try:
             runtime = resolve_runtime_provider(requested=target_provider)
@@ -786,6 +796,12 @@ def switch_model(
                     f"'{provider_label}': {e}"
                 ),
             )
+    elif _is_custom_endpoint:
+        # Custom/local endpoints: keep the current api_key and base_url
+        # (already initialized above from the caller's live agent state)
+        # and just detect api_mode from the URL.
+        from hermes_cli.runtime_provider import _detect_api_mode_for_url
+        api_mode = _detect_api_mode_for_url(base_url) or "chat_completions"
     else:
         try:
             runtime = resolve_runtime_provider(requested=current_provider)
